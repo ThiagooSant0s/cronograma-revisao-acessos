@@ -96,12 +96,10 @@
 
     <!-- Firebase SDKs -->
     <script type="module">
-        // Importações dos serviços Firebase necessários
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // ----- ELEMENTOS DO DOM -----
         const loader = document.getElementById('loader');
         const mainContent = document.getElementById('main-content');
         const monthInput = document.getElementById('month-input');
@@ -115,17 +113,14 @@
         const completedTitle = document.getElementById('completed-title');
         const pendingTitle = document.getElementById('pending-title');
 
-        // ----- CONFIGURAÇÃO E ESTADO -----
         let db, auth;
-        let scheduleData = {}; // Agora começa vazio e é preenchido pelo Firebase
+        let scheduleData = {};
         const monthOrder = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
         const statusOptions = ["Concluído", "Pendente", "Não Encontrado"];
         const statusColors = { "Concluído": 'rgba(34, 197, 94, 0.8)', "Pendente": 'rgba(234, 179, 8, 0.8)', "Não Encontrado": 'rgba(239, 68, 68, 0.8)' };
         const statusBorderColors = { "Concluído": 'rgba(22, 163, 74, 1)', "Pendente": 'rgba(202, 138, 4, 1)', "Não Encontrado": 'rgba(220, 38, 38, 1)' };
         let statusChart = null;
-        let scheduleDocRef; // Referência ao documento no Firestore
-        
-        // ----- FUNÇÕES -----
+        let scheduleDocRef;
         
         const showAlert = (message) => {
             alertMessage.textContent = message;
@@ -170,10 +165,11 @@
         };
 
         const updateSummaryLists = () => {
+            const allEntries = Object.values(scheduleData).flat();
             completedSystemsList.innerHTML = '';
             pendingSystemsList.innerHTML = '';
-            const allEntries = Object.values(scheduleData).flat();
             const totalEntries = allEntries.length;
+
             if (totalEntries === 0) {
                  completedSystemsList.innerHTML = '<li class="list-none text-slate-400 italic">Nenhum sistema.</li>';
                  pendingSystemsList.innerHTML = '<li class="list-none text-slate-400 italic">Nenhum sistema.</li>';
@@ -185,13 +181,8 @@
             allEntries.forEach(entry => {
                 const li = document.createElement('li');
                 li.textContent = entry.system;
-                if (entry.status === 'Concluído') {
-                    completedSystemsList.appendChild(li);
-                    completedCount++;
-                } else if (entry.status === 'Pendente') {
-                    pendingSystemsList.appendChild(li);
-                    pendingCount++;
-                }
+                if (entry.status === 'Concluído') completedSystemsList.appendChild(li), completedCount++;
+                else if (entry.status === 'Pendente') pendingSystemsList.appendChild(li), pendingCount++;
             });
             if (completedCount === 0) completedSystemsList.innerHTML = '<li class="list-none text-slate-400 italic">Nenhum.</li>';
             if (pendingCount === 0) pendingSystemsList.innerHTML = '<li class="list-none text-slate-400 italic">Nenhum.</li>';
@@ -200,7 +191,7 @@
         };
         
         const updateChart = () => {
-             const counts = { "Concluído": 0, "Pendente": 0, "Não Encontrado": 0 };
+            const counts = { "Concluído": 0, "Pendente": 0, "Não Encontrado": 0 };
             Object.values(scheduleData).flat().forEach(entry => { if (counts[entry.status] !== undefined) counts[entry.status]++; });
             const dataValues = statusOptions.map(status => counts[status]);
             const data = {
@@ -229,6 +220,7 @@
             if (!monthOrder.includes(monthName)) { showAlert(`"${monthName}" não é um nome de mês válido.`); return; }
             scheduleData[monthName] = [];
             monthInput.value = '';
+            renderUI(); // CORREÇÃO: Renderiza a UI imediatamente após a alteração local
             await saveDataToFirestore();
         };
 
@@ -238,25 +230,30 @@
             const monthCard = e.target.closest('[data-month]');
             if (!monthCard) return;
             const monthName = monthCard.dataset.month;
-            let needsSave = false;
             
+            // Variáveis para controlar as atualizações
+            let shouldSave = false;
+            let shouldRender = false;
+
             switch (action) {
                 case 'add-entry':
-                    scheduleData[monthName].push({ system: 'Novo Sistema', status: 'Pendente' });
-                    needsSave = true;
+                    if (e.type === 'click') {
+                        scheduleData[monthName].push({ system: 'Novo Sistema', status: 'Pendente' });
+                        shouldSave = true;
+                        shouldRender = true; // Precisa renderizar para mostrar a nova entrada
+                    }
                     break;
-                // CORREÇÃO: Ação de 'update-system' agora é disparada apenas no evento 'change'
                 case 'update-system':
                     if (e.type === 'change') {
                         scheduleData[monthName][index].system = e.target.value;
-                        needsSave = true;
-                        updateSummaryLists(); 
+                        shouldSave = true;
+                        updateSummaryLists(); // Apenas o resumo precisa ser atualizado aqui
                     }
                     break;
                 case 'update-status':
                     if (e.type === 'change') {
                         scheduleData[monthName][index].status = e.target.value;
-                        needsSave = true;
+                        shouldSave = true;
                         updateChart();
                         updateSummaryLists();
                     }
@@ -264,31 +261,36 @@
                 case 'delete-entry':
                     if (e.type === 'click') {
                         scheduleData[monthName].splice(index, 1);
-                        needsSave = true;
+                        shouldSave = true;
+                        shouldRender = true; // Precisa renderizar para remover a entrada
                     }
                     break;
                 case 'delete-month':
                     if (e.type === 'click') {
                         delete scheduleData[monthName];
-                        needsSave = true;
+                        shouldSave = true;
+                        shouldRender = true; // Precisa renderizar para remover o mês inteiro
                     }
                     break;
             }
 
-            if (needsSave) {
+            // CORREÇÃO: Só renderiza a UI se for uma mudança estrutural
+            if (shouldRender) {
+                renderUI();
+            }
+
+            // Salva no Firestore se qualquer alteração válida foi feita
+            if (shouldSave) {
                 await saveDataToFirestore();
             }
         };
 
-        // ----- INICIALIZAÇÃO FIREBASE -----
         async function initialize() {
             try {
-                // Suas chaves de conexão reais, como você forneceu.
                 const firebaseConfig = {
                     apiKey: "AIzaSyCdiHLVnCfZtBA2Gexx1RJ5VO5u_qTEpU0",
                     authDomain: "cronograma-revisao-acessos.firebaseapp.com",
                     projectId: "cronograma-revisao-acessos",
-                    // CORREÇÃO: O padrão correto para storageBucket é .appspot.com
                     storageBucket: "cronograma-revisao-acessos.appspot.com",
                     messagingSenderId: "593115926418",
                     appId: "1:593115926418:web:7734998c04dbdcf00b7b4b"
@@ -300,11 +302,12 @@
                 
                 onAuthStateChanged(auth, user => {
                     if (user) {
-                        // CORREÇÃO: O caminho para o documento no Firestore foi simplificado e corrigido.
                         scheduleDocRef = doc(db, "schedules", "main-collaborative-schedule");
                         
                         onSnapshot(scheduleDocRef, (docSnap) => {
-                            // CORREÇÃO: Impede que a tela redesenhe desnecessariamente, evitando o bug da digitação.
+                            // CORREÇÃO: Essa verificação evita que a tela redesenhe quando VOCÊ faz uma mudança,
+                            // mas permite que ela redesenhe quando OUTRO usuário (sua gerente) faz.
+                            // Isso corrige o bug da digitação e o bug da atualização em tempo real.
                             if (docSnap.metadata.hasPendingWrites) {
                                 return;
                             }
@@ -318,6 +321,9 @@
                             
                             loader.classList.add('hidden');
                             mainContent.style.opacity = '1';
+                        }, (error) => {
+                            console.error("Erro no listener do Firestore:", error);
+                            loader.innerHTML = '<p class="text-red-500 font-bold text-center">Erro de conexão com o banco de dados. Verifique as regras de segurança do Firestore.</p>';
                         });
                     }
                 });
@@ -330,7 +336,6 @@
             }
         }
 
-        // CORREÇÃO: Removido o listener de 'input', que causava o bug da digitação.
         addMonthBtn.addEventListener('click', handleAddMonth);
         monthInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddMonth(); } });
         monthsContainer.addEventListener('change', handleMonthsContainerEvents);
