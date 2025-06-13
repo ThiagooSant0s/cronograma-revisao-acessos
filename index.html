@@ -52,6 +52,10 @@
             <header class="text-center my-8">
                 <h1 class="text-3xl md:text-4xl font-bold text-slate-900">Cronograma de Revisão de Acessos</h1>
                 <p class="text-slate-600 mt-2 max-w-2xl mx-auto">Dashboard colaborativo para acompanhamento do progresso de revisões.</p>
+                <!-- NOVO: Container para a data da última atualização -->
+                <div class="mt-4 text-sm text-slate-500" id="last-updated-container">
+                    <span id="last-updated-timestamp">Sincronizando...</span>
+                </div>
             </header>
 
             <section class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10 items-start">
@@ -78,9 +82,7 @@
                                 <ul id="completed-systems-list" class="space-y-1 text-slate-600 text-sm list-disc list-inside"></ul>
                             </div>
                             <div>
-                                <!-- MUDANÇA: Título da coluna da direita -->
                                 <h3 id="action-items-title" class="font-semibold text-slate-700 mb-2">Pendentes / Em Andamento</h3>
-                                <!-- MUDANÇA: ID da lista da direita -->
                                 <ul id="action-items-list" class="space-y-2 text-slate-600 text-sm"></ul>
                             </div>
                         </div>
@@ -100,7 +102,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, onSnapshot, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const loader = document.getElementById('loader');
         const mainContent = document.getElementById('main-content');
@@ -111,28 +113,22 @@
         const alertMessage = document.getElementById('alert-message');
         const chartCanvas = document.getElementById('status-chart');
         const completedSystemsList = document.getElementById('completed-systems-list');
-        // MUDANÇA: Referência à nova lista de itens de ação
         const actionItemsList = document.getElementById('action-items-list');
         const completedTitle = document.getElementById('completed-title');
-        // MUDANÇA: Referência ao novo título
         const actionItemsTitle = document.getElementById('action-items-title');
+        // NOVO: Referência ao elemento do timestamp
+        const lastUpdatedTimestamp = document.getElementById('last-updated-timestamp');
 
         let db, auth;
         let scheduleData = {};
 
         const monthOrder = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-        
-        // MUDANÇA: statusOptions atualizado
         const statusOptions = ["Concluído", "Em andamento", "Pendente"];
-
-        // MUDANÇA: Cores do gráfico atualizadas
         const statusChartColors = {
-            "Concluído": { bg: 'rgba(34, 197, 94, 0.8)', border: 'rgba(22, 163, 74, 1)' },      // Verde
-            "Em andamento": { bg: 'rgba(234, 179, 8, 0.8)', border: 'rgba(202, 138, 4, 1)' }, // Amarelo
-            "Pendente": { bg: 'rgba(239, 68, 68, 0.8)', border: 'rgba(220, 38, 38, 1)' }       // Vermelho
+            "Concluído": { bg: 'rgba(34, 197, 94, 0.8)', border: 'rgba(22, 163, 74, 1)' },
+            "Em andamento": { bg: 'rgba(234, 179, 8, 0.8)', border: 'rgba(202, 138, 4, 1)' },
+            "Pendente": { bg: 'rgba(239, 68, 68, 0.8)', border: 'rgba(220, 38, 38, 1)' }
         };
-        
-        // MUDANÇA: Cores do Tailwind para os seletores atualizadas
         const statusTailwindColors = {
             "Concluído": "bg-green-100 text-green-800 border-green-300",
             "Em andamento": "bg-yellow-100 text-yellow-800 border-yellow-300",
@@ -248,7 +244,11 @@
         async function saveDataToFirestore() {
             if (!scheduleDocRef) return;
             try {
-                await setDoc(scheduleDocRef, { data: scheduleData });
+                // NOVO: Adiciona o timestamp do servidor a cada salvamento
+                await setDoc(scheduleDocRef, { 
+                    data: scheduleData,
+                    lastUpdated: serverTimestamp() 
+                });
             } catch (error) {
                 console.error("Erro ao salvar no Firestore: ", error);
                 showAlert("Erro de conexão. Não foi possível salvar.");
@@ -279,7 +279,6 @@
             switch (action) {
                 case 'add-entry':
                     if (e.type === 'click') {
-                        // O padrão para nova entrada agora é "Pendente"
                         scheduleData[monthName].push({ system: 'Novo Sistema', status: 'Pendente' });
                         shouldSave = true;
                         shouldRender = true;
@@ -358,7 +357,22 @@
                                 return;
                             }
                             if (docSnap.exists()) {
-                                scheduleData = docSnap.data().data || {};
+                                const docData = docSnap.data();
+                                scheduleData = docData.data || {};
+                                
+                                // NOVO: Lê, formata e exibe o timestamp
+                                const timestamp = docData.lastUpdated;
+                                if (timestamp && timestamp.toDate) {
+                                    const date = timestamp.toDate();
+                                    const formattedDate = new Intl.DateTimeFormat('pt-BR', {
+                                        dateStyle: 'short',
+                                        timeStyle: 'medium'
+                                    }).format(date);
+                                    lastUpdatedTimestamp.textContent = `Última atualização: ${formattedDate}`;
+                                } else {
+                                    lastUpdatedTimestamp.textContent = 'Aguardando primeira atualização...';
+                                }
+
                             } else {
                                 scheduleData = { "Janeiro": [{ system: "Painel Admin", status: "Concluído" }, { system: "BI", status: "Em andamento"}, { system: "CRM", status: "Pendente" }] };
                                 saveDataToFirestore();
