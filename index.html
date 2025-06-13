@@ -52,20 +52,29 @@
             <header class="text-center my-8">
                 <h1 class="text-3xl md:text-4xl font-bold text-slate-900">Cronograma de Revisão de Acessos</h1>
                 <p class="text-slate-600 mt-2 max-w-2xl mx-auto">Dashboard colaborativo para acompanhamento do progresso de revisões.</p>
-                <!-- NOVO: Container para a data da última atualização -->
                 <div class="mt-4 text-sm text-slate-500" id="last-updated-container">
                     <span id="last-updated-timestamp">Sincronizando...</span>
                 </div>
             </header>
 
             <section class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10 items-start">
-                <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg border border-slate-200">
-                    <h2 class="text-xl font-bold mb-4 text-slate-700">Adicionar Novo Mês</h2>
-                    <div class="flex flex-col sm:flex-row gap-3">
-                        <input type="text" id="month-input" placeholder="Nome do Mês (ex: Março)" class="flex-grow w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <button id="add-month-btn" type="button" class="w-full sm:w-auto bg-blue-600 text-white font-semibold px-5 py-2 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                            Adicionar
-                        </button>
+                <!-- NOVO: Bloco para o Logo e controles -->
+                <div class="lg:col-span-1 space-y-8">
+                    
+                <!-- Card do Logo -->
+                <div class="bg-white p-4 rounded-xl shadow-lg flex justify-center items-center">
+                    <img src="logotipo.png" alt="Logo DPSP" class="h-40 w-96 object-contain">
+                </div>
+
+                    <!-- Card dos Controles -->
+                    <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                        <h2 class="text-xl font-bold mb-4 text-slate-700">Adicionar Novo Mês</h2>
+                        <div class="flex flex-col sm:flex-row gap-3">
+                            <input type="text" id="month-input" placeholder="Nome do Mês (ex: Março)" class="flex-grow w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <button id="add-month-btn" type="button" class="w-full sm:w-auto bg-blue-600 text-white font-semibold px-5 py-2 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                Adicionar
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -116,7 +125,6 @@
         const actionItemsList = document.getElementById('action-items-list');
         const completedTitle = document.getElementById('completed-title');
         const actionItemsTitle = document.getElementById('action-items-title');
-        // NOVO: Referência ao elemento do timestamp
         const lastUpdatedTimestamp = document.getElementById('last-updated-timestamp');
 
         let db, auth;
@@ -244,7 +252,6 @@
         async function saveDataToFirestore() {
             if (!scheduleDocRef) return;
             try {
-                // NOVO: Adiciona o timestamp do servidor a cada salvamento
                 await setDoc(scheduleDocRef, { 
                     data: scheduleData,
                     lastUpdated: serverTimestamp() 
@@ -360,7 +367,6 @@
                                 const docData = docSnap.data();
                                 scheduleData = docData.data || {};
                                 
-                                // NOVO: Lê, formata e exibe o timestamp
                                 const timestamp = docData.lastUpdated;
                                 if (timestamp && timestamp.toDate) {
                                     const date = timestamp.toDate();
