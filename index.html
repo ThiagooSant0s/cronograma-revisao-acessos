@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cronograma de Revisão de Acessos (Colaborativo)</title>
+    
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js via CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        #alert-box, #main-content {
+            transition: opacity 0.5s ease-in-out;
+        }
+        #alert-box {
+            transform: translateY(-20px) scale(0.95);
+            opacity: 0;
+            pointer-events: none;
+        }
+        #alert-box[data-show="true"] {
+            transform: translateY(0) scale(1);
+            opacity: 1;
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased">
+
+    <!-- Indicador de Carregamento -->
+    <div id="loader" class="flex justify-center items-center h-screen p-4">
+        <div class="text-center">
+            <svg class="animate-spin h-8 w-8 text-blue-600 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="text-lg font-semibold text-slate-700">Carregando dados em tempo real...</p>
+        </div>
+    </div>
+
+    <!-- Conteúdo Principal (inicialmente oculto) -->
+    <div id="main-content" class="opacity-0">
+        <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+            <header class="text-center my-8">
+                <h1 class="text-3xl md:text-4xl font-bold text-slate-900">Cronograma de Revisão de Acessos</h1>
+                <p class="text-slate-600 mt-2 max-w-2xl mx-auto">Dashboard colaborativo para acompanhamento do progresso de revisões.</p>
+            </header>
+
+            <section class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10 items-start">
+                <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                    <h2 class="text-xl font-bold mb-4 text-slate-700">Adicionar Novo Mês</h2>
+                    <div class="flex flex-col sm:flex-row gap-3">
+                        <input type="text" id="month-input" placeholder="Nome do Mês (ex: Março)" class="flex-grow w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <button id="add-month-btn" type="button" class="w-full sm:w-auto bg-blue-600 text-white font-semibold px-5 py-2 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                            Adicionar
+                        </button>
+                    </div>
+                </div>
+
+                <div class="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                        <h2 class="text-xl font-bold mb-4 text-slate-700 text-center">Status Geral (Percentual)</h2>
+                        <div class="relative h-64 flex justify-center items-center"><canvas id="status-chart"></canvas></div>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                        <h2 class="text-xl font-bold mb-4 text-slate-700">Resumo dos Sistemas</h2>
+                        <div class="grid grid-cols-2 gap-6 h-64 overflow-y-auto">
+                            <div>
+                                <h3 id="completed-title" class="font-semibold text-green-700 mb-2">Concluídos</h3>
+                                <ul id="completed-systems-list" class="space-y-1 text-slate-600 text-sm list-disc list-inside"></ul>
+                            </div>
+                            <div>
+                                <h3 id="pending-title" class="font-semibold text-yellow-700 mb-2">Pendentes</h3>
+                                <ul id="pending-systems-list" class="space-y-1 text-slate-600 text-sm list-disc list-inside"></ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <main id="months-container" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8"></main>
+        </div>
+    </div>
+
+    <div id="alert-box" data-show="false" class="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-red-600 text-white font-semibold px-6 py-3 rounded-lg shadow-xl">
+        <p id="alert-message"></p>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        // Importações dos serviços Firebase necessários
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ----- ELEMENTOS DO DOM -----
+        const loader = document.getElementById('loader');
+        const mainContent = document.getElementById('main-content');
+        const monthInput = document.getElementById('month-input');
+        const addMonthBtn = document.getElementById('add-month-btn');
+        const monthsContainer = document.getElementById('months-container');
+        const alertBox = document.getElementById('alert-box');
+        const alertMessage = document.getElementById('alert-message');
+        const chartCanvas = document.getElementById('status-chart');
+        const completedSystemsList = document.getElementById('completed-systems-list');
+        const pendingSystemsList = document.getElementById('pending-systems-list');
+        const completedTitle = document.getElementById('completed-title');
+        const pendingTitle = document.getElementById('pending-title');
+
+        // ----- CONFIGURAÇÃO E ESTADO -----
+        let db, auth;
+        let scheduleData = {}; // Agora começa vazio e é preenchido pelo Firebase
+        const monthOrder = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+        const statusOptions = ["Concluído", "Pendente", "Não Encontrado"];
+        const statusColors = { "Concluído": 'rgba(34, 197, 94, 0.8)', "Pendente": 'rgba(234, 179, 8, 0.8)', "Não Encontrado": 'rgba(239, 68, 68, 0.8)' };
+        const statusBorderColors = { "Concluído": 'rgba(22, 163, 74, 1)', "Pendente": 'rgba(202, 138, 4, 1)', "Não Encontrado": 'rgba(220, 38, 38, 1)' };
+        let statusChart = null;
+        let scheduleDocRef; // Referência ao documento no Firestore
+        
+        // ----- FUNÇÕES -----
+        
+        const showAlert = (message) => {
+            alertMessage.textContent = message;
+            alertBox.dataset.show = 'true';
+            setTimeout(() => { alertBox.dataset.show = 'false'; }, 3000);
+        };
+
+        const renderUI = () => {
+            const sortedMonthNames = monthOrder.filter(month => scheduleData[month]);
+            monthsContainer.innerHTML = '';
+            
+            sortedMonthNames.forEach(monthName => {
+                const entries = scheduleData[monthName] || [];
+                const monthCard = document.createElement('div');
+                monthCard.className = 'bg-white p-6 rounded-xl shadow-lg border border-slate-200 flex flex-col gap-4';
+                monthCard.dataset.month = monthName;
+
+                monthCard.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-2xl font-bold text-slate-800">${monthName}</h3>
+                        <button data-action="delete-month" title="Excluir Mês" class="text-slate-400 hover:text-red-500 transition-colors text-2xl font-bold">&times;</button>
+                    </div>
+                    <div class="space-y-3">
+                        ${entries.map((entry, index) => `
+                            <div class="flex items-center gap-2 group">
+                                <input type="text" value="${entry.system.replace(/"/g, '&quot;')}" data-action="update-system" data-index="${index}" class="flex-grow w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <select data-action="update-status" data-index="${index}" class="px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                    ${statusOptions.map(opt => `<option value="${opt}" ${entry.status === opt ? 'selected' : ''}>${opt}</option>`).join('')}
+                                </select>
+                                <button data-action="delete-entry" data-index="${index}" title="Excluir Entrada" class="text-slate-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 text-2xl font-bold">&times;</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <button data-action="add-entry" class="mt-2 self-start bg-green-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                        + Adicionar Entrada
+                    </button>
+                `;
+                monthsContainer.appendChild(monthCard);
+            });
+            updateChart();
+            updateSummaryLists();
+        };
+
+        const updateSummaryLists = () => {
+            completedSystemsList.innerHTML = '';
+            pendingSystemsList.innerHTML = '';
+            const allEntries = Object.values(scheduleData).flat();
+            const totalEntries = allEntries.length;
+            if (totalEntries === 0) {
+                 completedSystemsList.innerHTML = '<li class="list-none text-slate-400 italic">Nenhum sistema.</li>';
+                 pendingSystemsList.innerHTML = '<li class="list-none text-slate-400 italic">Nenhum sistema.</li>';
+                 completedTitle.textContent = "Concluídos";
+                 pendingTitle.textContent = "Pendentes";
+                 return;
+            }
+            let completedCount = 0, pendingCount = 0;
+            allEntries.forEach(entry => {
+                const li = document.createElement('li');
+                li.textContent = entry.system;
+                if (entry.status === 'Concluído') {
+                    completedSystemsList.appendChild(li);
+                    completedCount++;
+                } else if (entry.status === 'Pendente') {
+                    pendingSystemsList.appendChild(li);
+                    pendingCount++;
+                }
+            });
+            if (completedCount === 0) completedSystemsList.innerHTML = '<li class="list-none text-slate-400 italic">Nenhum.</li>';
+            if (pendingCount === 0) pendingSystemsList.innerHTML = '<li class="list-none text-slate-400 italic">Nenhum.</li>';
+            completedTitle.textContent = `Concluídos (${((completedCount / totalEntries) * 100).toFixed(1)}%)`;
+            pendingTitle.textContent = `Pendentes (${((pendingCount / totalEntries) * 100).toFixed(1)}%)`;
+        };
+        
+        const updateChart = () => {
+             const counts = { "Concluído": 0, "Pendente": 0, "Não Encontrado": 0 };
+            Object.values(scheduleData).flat().forEach(entry => { if (counts[entry.status] !== undefined) counts[entry.status]++; });
+            const dataValues = statusOptions.map(status => counts[status]);
+            const data = {
+                labels: statusOptions,
+                datasets: [{ label: 'Status', data: dataValues, backgroundColor: statusOptions.map(s => statusColors[s]), borderColor: statusOptions.map(s => statusBorderColors[s]), borderWidth: 2 }]
+            };
+            const options = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (c) => { const total = c.chart.data.datasets[0].data.reduce((a, b) => a + b, 0); return `${c.label}: ${c.raw} (${total > 0 ? ((c.raw / total) * 100).toFixed(1) : 0}%)`; } } } } };
+            if (statusChart) { statusChart.data = data; statusChart.options = options; statusChart.update(); } 
+            else { statusChart = new Chart(chartCanvas.getContext('2d'), { type: 'pie', data, options }); }
+        };
+
+        async function saveDataToFirestore() {
+            if (!scheduleDocRef) return;
+            try {
+                await setDoc(scheduleDocRef, { data: scheduleData });
+            } catch (error) {
+                console.error("Erro ao salvar no Firestore: ", error);
+                showAlert("Erro de conexão. Não foi possível salvar.");
+            }
+        }
+        
+        const handleAddMonth = async () => {
+            const monthName = monthInput.value.trim();
+            if (!monthName) { showAlert("Insira o nome do mês."); return; }
+            if (scheduleData[monthName]) { showAlert(`O mês "${monthName}" já existe!`); return; }
+            if (!monthOrder.includes(monthName)) { showAlert(`"${monthName}" não é um nome de mês válido.`); return; }
+            scheduleData[monthName] = [];
+            monthInput.value = '';
+            await saveDataToFirestore();
+        };
+
+        const handleMonthsContainerEvents = async (e) => {
+            const { action, index } = e.target.dataset;
+            if (!action) return;
+            const monthCard = e.target.closest('[data-month]');
+            if (!monthCard) return;
+            const monthName = monthCard.dataset.month;
+            let needsSave = false;
+            
+            switch (action) {
+                case 'add-entry':
+                    scheduleData[monthName].push({ system: 'Novo Sistema', status: 'Pendente' });
+                    needsSave = true;
+                    break;
+                // CORREÇÃO: Ação de 'update-system' agora é disparada apenas no evento 'change'
+                case 'update-system':
+                    if (e.type === 'change') {
+                        scheduleData[monthName][index].system = e.target.value;
+                        needsSave = true;
+                        updateSummaryLists(); 
+                    }
+                    break;
+                case 'update-status':
+                    if (e.type === 'change') {
+                        scheduleData[monthName][index].status = e.target.value;
+                        needsSave = true;
+                        updateChart();
+                        updateSummaryLists();
+                    }
+                    break;
+                case 'delete-entry':
+                    if (e.type === 'click') {
+                        scheduleData[monthName].splice(index, 1);
+                        needsSave = true;
+                    }
+                    break;
+                case 'delete-month':
+                    if (e.type === 'click') {
+                        delete scheduleData[monthName];
+                        needsSave = true;
+                    }
+                    break;
+            }
+
+            if (needsSave) {
+                await saveDataToFirestore();
+            }
+        };
+
+        // ----- INICIALIZAÇÃO FIREBASE -----
+        async function initialize() {
+            try {
+                // Suas chaves de conexão reais, como você forneceu.
+                const firebaseConfig = {
+                    apiKey: "AIzaSyCdiHLVnCfZtBA2Gexx1RJ5VO5u_qTEpU0",
+                    authDomain: "cronograma-revisao-acessos.firebaseapp.com",
+                    projectId: "cronograma-revisao-acessos",
+                    // CORREÇÃO: O padrão correto para storageBucket é .appspot.com
+                    storageBucket: "cronograma-revisao-acessos.appspot.com",
+                    messagingSenderId: "593115926418",
+                    appId: "1:593115926418:web:7734998c04dbdcf00b7b4b"
+                };
+
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                onAuthStateChanged(auth, user => {
+                    if (user) {
+                        // CORREÇÃO: O caminho para o documento no Firestore foi simplificado e corrigido.
+                        scheduleDocRef = doc(db, "schedules", "main-collaborative-schedule");
+                        
+                        onSnapshot(scheduleDocRef, (docSnap) => {
+                            // CORREÇÃO: Impede que a tela redesenhe desnecessariamente, evitando o bug da digitação.
+                            if (docSnap.metadata.hasPendingWrites) {
+                                return;
+                            }
+                            if (docSnap.exists()) {
+                                scheduleData = docSnap.data().data || {};
+                            } else {
+                                scheduleData = { "Janeiro": [{ system: "Exemplo: Painel Admin", status: "Pendente" }] };
+                                saveDataToFirestore();
+                            }
+                            renderUI();
+                            
+                            loader.classList.add('hidden');
+                            mainContent.style.opacity = '1';
+                        });
+                    }
+                });
+
+                await signInAnonymously(auth);
+
+            } catch (error) {
+                console.error("Falha na inicialização do Firebase:", error);
+                loader.innerHTML = '<p class="text-red-500 font-bold text-center">Erro de conexão. Verifique suas chaves do Firebase e as regras de segurança do Firestore.</p>';
+            }
+        }
+
+        // CORREÇÃO: Removido o listener de 'input', que causava o bug da digitação.
+        addMonthBtn.addEventListener('click', handleAddMonth);
+        monthInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddMonth(); } });
+        monthsContainer.addEventListener('change', handleMonthsContainerEvents);
+        monthsContainer.addEventListener('click', handleMonthsContainerEvents);
+
+        initialize();
+    </script>
+</body>
+</html>
