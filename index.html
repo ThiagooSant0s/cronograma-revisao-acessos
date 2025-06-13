@@ -119,6 +119,14 @@
         const statusOptions = ["Concluído", "Pendente", "Não Encontrado"];
         const statusColors = { "Concluído": 'rgba(34, 197, 94, 0.8)', "Pendente": 'rgba(234, 179, 8, 0.8)', "Não Encontrado": 'rgba(239, 68, 68, 0.8)' };
         const statusBorderColors = { "Concluído": 'rgba(22, 163, 74, 1)', "Pendente": 'rgba(202, 138, 4, 1)', "Não Encontrado": 'rgba(220, 38, 38, 1)' };
+        
+        // NOVO: Mapeamento de status para classes de cor do Tailwind
+        const statusTailwindColors = {
+            "Concluído": "bg-green-100 text-green-800 border-green-300",
+            "Pendente": "bg-yellow-100 text-yellow-800 border-yellow-300",
+            "Não Encontrado": "bg-red-100 text-red-800 border-red-300"
+        };
+        
         let statusChart = null;
         let scheduleDocRef;
         
@@ -144,15 +152,18 @@
                         <button data-action="delete-month" title="Excluir Mês" class="text-slate-400 hover:text-red-500 transition-colors text-2xl font-bold">&times;</button>
                     </div>
                     <div class="space-y-3">
-                        ${entries.map((entry, index) => `
+                        ${entries.map((entry, index) => {
+                            // NOVO: Determina a classe de cor com base no status atual da entrada
+                            const colorClass = statusTailwindColors[entry.status] || 'bg-slate-50 border-slate-300';
+                            return `
                             <div class="flex items-center gap-2 group">
                                 <input type="text" value="${entry.system.replace(/"/g, '&quot;')}" data-action="update-system" data-index="${index}" class="flex-grow w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                                <select data-action="update-status" data-index="${index}" class="px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <select data-action="update-status" data-index="${index}" class="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors duration-200 ${colorClass}">
                                     ${statusOptions.map(opt => `<option value="${opt}" ${entry.status === opt ? 'selected' : ''}>${opt}</option>`).join('')}
                                 </select>
                                 <button data-action="delete-entry" data-index="${index}" title="Excluir Entrada" class="text-slate-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 text-2xl font-bold">&times;</button>
                             </div>
-                        `).join('')}
+                        `}).join('')}
                     </div>
                     <button data-action="add-entry" class="mt-2 self-start bg-green-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
                         + Adicionar Entrada
@@ -220,7 +231,7 @@
             if (!monthOrder.includes(monthName)) { showAlert(`"${monthName}" não é um nome de mês válido.`); return; }
             scheduleData[monthName] = [];
             monthInput.value = '';
-            renderUI(); // CORREÇÃO: Renderiza a UI imediatamente após a alteração local
+            renderUI();
             await saveDataToFirestore();
         };
 
@@ -231,7 +242,6 @@
             if (!monthCard) return;
             const monthName = monthCard.dataset.month;
             
-            // Variáveis para controlar as atualizações
             let shouldSave = false;
             let shouldRender = false;
 
@@ -240,19 +250,29 @@
                     if (e.type === 'click') {
                         scheduleData[monthName].push({ system: 'Novo Sistema', status: 'Pendente' });
                         shouldSave = true;
-                        shouldRender = true; // Precisa renderizar para mostrar a nova entrada
+                        shouldRender = true;
                     }
                     break;
                 case 'update-system':
                     if (e.type === 'change') {
                         scheduleData[monthName][index].system = e.target.value;
                         shouldSave = true;
-                        updateSummaryLists(); // Apenas o resumo precisa ser atualizado aqui
+                        updateSummaryLists();
                     }
                     break;
                 case 'update-status':
                     if (e.type === 'change') {
-                        scheduleData[monthName][index].status = e.target.value;
+                        const newStatus = e.target.value;
+                        scheduleData[monthName][index].status = newStatus;
+                        
+                        // NOVO: Atualiza a cor do seletor imediatamente
+                        const selectElement = e.target;
+                        Object.values(statusTailwindColors).forEach(clsString => clsString.split(' ').forEach(cls => selectElement.classList.remove(cls)));
+                        const newColorClasses = statusTailwindColors[newStatus];
+                        if (newColorClasses) {
+                            newColorClasses.split(' ').forEach(cls => selectElement.classList.add(cls));
+                        }
+                        
                         shouldSave = true;
                         updateChart();
                         updateSummaryLists();
@@ -262,24 +282,22 @@
                     if (e.type === 'click') {
                         scheduleData[monthName].splice(index, 1);
                         shouldSave = true;
-                        shouldRender = true; // Precisa renderizar para remover a entrada
+                        shouldRender = true;
                     }
                     break;
                 case 'delete-month':
                     if (e.type === 'click') {
                         delete scheduleData[monthName];
                         shouldSave = true;
-                        shouldRender = true; // Precisa renderizar para remover o mês inteiro
+                        shouldRender = true;
                     }
                     break;
             }
 
-            // CORREÇÃO: Só renderiza a UI se for uma mudança estrutural
             if (shouldRender) {
                 renderUI();
             }
 
-            // Salva no Firestore se qualquer alteração válida foi feita
             if (shouldSave) {
                 await saveDataToFirestore();
             }
@@ -305,9 +323,6 @@
                         scheduleDocRef = doc(db, "schedules", "main-collaborative-schedule");
                         
                         onSnapshot(scheduleDocRef, (docSnap) => {
-                            // CORREÇÃO: Essa verificação evita que a tela redesenhe quando VOCÊ faz uma mudança,
-                            // mas permite que ela redesenhe quando OUTRO usuário (sua gerente) faz.
-                            // Isso corrige o bug da digitação e o bug da atualização em tempo real.
                             if (docSnap.metadata.hasPendingWrites) {
                                 return;
                             }
