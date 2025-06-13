@@ -78,8 +78,10 @@
                                 <ul id="completed-systems-list" class="space-y-1 text-slate-600 text-sm list-disc list-inside"></ul>
                             </div>
                             <div>
-                                <h3 id="pending-title" class="font-semibold text-yellow-700 mb-2">Pendentes</h3>
-                                <ul id="pending-systems-list" class="space-y-1 text-slate-600 text-sm list-disc list-inside"></ul>
+                                <!-- MUDANÇA: Título da coluna da direita -->
+                                <h3 id="action-items-title" class="font-semibold text-slate-700 mb-2">Pendentes / Em Andamento</h3>
+                                <!-- MUDANÇA: ID da lista da direita -->
+                                <ul id="action-items-list" class="space-y-2 text-slate-600 text-sm"></ul>
                             </div>
                         </div>
                     </div>
@@ -109,22 +111,32 @@
         const alertMessage = document.getElementById('alert-message');
         const chartCanvas = document.getElementById('status-chart');
         const completedSystemsList = document.getElementById('completed-systems-list');
-        const pendingSystemsList = document.getElementById('pending-systems-list');
+        // MUDANÇA: Referência à nova lista de itens de ação
+        const actionItemsList = document.getElementById('action-items-list');
         const completedTitle = document.getElementById('completed-title');
-        const pendingTitle = document.getElementById('pending-title');
+        // MUDANÇA: Referência ao novo título
+        const actionItemsTitle = document.getElementById('action-items-title');
 
         let db, auth;
         let scheduleData = {};
+
         const monthOrder = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-        const statusOptions = ["Concluído", "Pendente", "Não Encontrado"];
-        const statusColors = { "Concluído": 'rgba(34, 197, 94, 0.8)', "Pendente": 'rgba(234, 179, 8, 0.8)', "Não Encontrado": 'rgba(239, 68, 68, 0.8)' };
-        const statusBorderColors = { "Concluído": 'rgba(22, 163, 74, 1)', "Pendente": 'rgba(202, 138, 4, 1)', "Não Encontrado": 'rgba(220, 38, 38, 1)' };
         
-        // NOVO: Mapeamento de status para classes de cor do Tailwind
+        // MUDANÇA: statusOptions atualizado
+        const statusOptions = ["Concluído", "Em andamento", "Pendente"];
+
+        // MUDANÇA: Cores do gráfico atualizadas
+        const statusChartColors = {
+            "Concluído": { bg: 'rgba(34, 197, 94, 0.8)', border: 'rgba(22, 163, 74, 1)' },      // Verde
+            "Em andamento": { bg: 'rgba(234, 179, 8, 0.8)', border: 'rgba(202, 138, 4, 1)' }, // Amarelo
+            "Pendente": { bg: 'rgba(239, 68, 68, 0.8)', border: 'rgba(220, 38, 38, 1)' }       // Vermelho
+        };
+        
+        // MUDANÇA: Cores do Tailwind para os seletores atualizadas
         const statusTailwindColors = {
             "Concluído": "bg-green-100 text-green-800 border-green-300",
-            "Pendente": "bg-yellow-100 text-yellow-800 border-yellow-300",
-            "Não Encontrado": "bg-red-100 text-red-800 border-red-300"
+            "Em andamento": "bg-yellow-100 text-yellow-800 border-yellow-300",
+            "Pendente": "bg-red-100 text-red-800 border-red-300"
         };
         
         let statusChart = null;
@@ -153,7 +165,6 @@
                     </div>
                     <div class="space-y-3">
                         ${entries.map((entry, index) => {
-                            // NOVO: Determina a classe de cor com base no status atual da entrada
                             const colorClass = statusTailwindColors[entry.status] || 'bg-slate-50 border-slate-300';
                             return `
                             <div class="flex items-center gap-2 group">
@@ -178,38 +189,58 @@
         const updateSummaryLists = () => {
             const allEntries = Object.values(scheduleData).flat();
             completedSystemsList.innerHTML = '';
-            pendingSystemsList.innerHTML = '';
+            actionItemsList.innerHTML = '';
             const totalEntries = allEntries.length;
 
             if (totalEntries === 0) {
                  completedSystemsList.innerHTML = '<li class="list-none text-slate-400 italic">Nenhum sistema.</li>';
-                 pendingSystemsList.innerHTML = '<li class="list-none text-slate-400 italic">Nenhum sistema.</li>';
+                 actionItemsList.innerHTML = '<li class="list-none text-slate-400 italic">Nenhum sistema.</li>';
                  completedTitle.textContent = "Concluídos";
-                 pendingTitle.textContent = "Pendentes";
+                 actionItemsTitle.textContent = "Pendentes / Em Andamento";
                  return;
             }
-            let completedCount = 0, pendingCount = 0;
+            let completedCount = 0, actionItemsCount = 0;
             allEntries.forEach(entry => {
-                const li = document.createElement('li');
-                li.textContent = entry.system;
-                if (entry.status === 'Concluído') completedSystemsList.appendChild(li), completedCount++;
-                else if (entry.status === 'Pendente') pendingSystemsList.appendChild(li), pendingCount++;
+                if (entry.status === 'Concluído') {
+                    const li = document.createElement('li');
+                    li.textContent = entry.system;
+                    li.className = "list-disc list-inside";
+                    completedSystemsList.appendChild(li);
+                    completedCount++;
+                } else if (entry.status === 'Pendente' || entry.status === 'Em andamento') {
+                    const li = document.createElement('li');
+                    const colorClass = entry.status === 'Pendente' ? 'text-red-600' : 'text-yellow-600';
+                    li.innerHTML = `<span class="font-bold ${colorClass}">[${entry.status}]</span> ${entry.system}`;
+                    actionItemsList.appendChild(li);
+                    actionItemsCount++;
+                }
             });
+
             if (completedCount === 0) completedSystemsList.innerHTML = '<li class="list-none text-slate-400 italic">Nenhum.</li>';
-            if (pendingCount === 0) pendingSystemsList.innerHTML = '<li class="list-none text-slate-400 italic">Nenhum.</li>';
-            completedTitle.textContent = `Concluídos (${((completedCount / totalEntries) * 100).toFixed(1)}%)`;
-            pendingTitle.textContent = `Pendentes (${((pendingCount / totalEntries) * 100).toFixed(1)}%)`;
+            if (actionItemsCount === 0) actionItemsList.innerHTML = '<li class="list-none text-slate-400 italic">Nenhum.</li>';
+            
+            completedTitle.textContent = `Concluídos (${totalEntries > 0 ? ((completedCount / totalEntries) * 100).toFixed(1) : 0}%)`;
+            actionItemsTitle.textContent = `Ações Pendentes (${totalEntries > 0 ? ((actionItemsCount / totalEntries) * 100).toFixed(1): 0}%)`;
         };
         
         const updateChart = () => {
-            const counts = { "Concluído": 0, "Pendente": 0, "Não Encontrado": 0 };
+            const counts = {};
+            statusOptions.forEach(opt => counts[opt] = 0);
             Object.values(scheduleData).flat().forEach(entry => { if (counts[entry.status] !== undefined) counts[entry.status]++; });
+            
             const dataValues = statusOptions.map(status => counts[status]);
             const data = {
                 labels: statusOptions,
-                datasets: [{ label: 'Status', data: dataValues, backgroundColor: statusOptions.map(s => statusColors[s]), borderColor: statusOptions.map(s => statusBorderColors[s]), borderWidth: 2 }]
+                datasets: [{ 
+                    label: 'Status', 
+                    data: dataValues, 
+                    backgroundColor: statusOptions.map(s => statusChartColors[s].bg), 
+                    borderColor: statusOptions.map(s => statusChartColors[s].border), 
+                    borderWidth: 2 
+                }]
             };
             const options = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (c) => { const total = c.chart.data.datasets[0].data.reduce((a, b) => a + b, 0); return `${c.label}: ${c.raw} (${total > 0 ? ((c.raw / total) * 100).toFixed(1) : 0}%)`; } } } } };
+            
             if (statusChart) { statusChart.data = data; statusChart.options = options; statusChart.update(); } 
             else { statusChart = new Chart(chartCanvas.getContext('2d'), { type: 'pie', data, options }); }
         };
@@ -248,6 +279,7 @@
             switch (action) {
                 case 'add-entry':
                     if (e.type === 'click') {
+                        // O padrão para nova entrada agora é "Pendente"
                         scheduleData[monthName].push({ system: 'Novo Sistema', status: 'Pendente' });
                         shouldSave = true;
                         shouldRender = true;
@@ -265,7 +297,6 @@
                         const newStatus = e.target.value;
                         scheduleData[monthName][index].status = newStatus;
                         
-                        // NOVO: Atualiza a cor do seletor imediatamente
                         const selectElement = e.target;
                         Object.values(statusTailwindColors).forEach(clsString => clsString.split(' ').forEach(cls => selectElement.classList.remove(cls)));
                         const newColorClasses = statusTailwindColors[newStatus];
@@ -329,7 +360,7 @@
                             if (docSnap.exists()) {
                                 scheduleData = docSnap.data().data || {};
                             } else {
-                                scheduleData = { "Janeiro": [{ system: "Exemplo: Painel Admin", status: "Pendente" }] };
+                                scheduleData = { "Janeiro": [{ system: "Painel Admin", status: "Concluído" }, { system: "BI", status: "Em andamento"}, { system: "CRM", status: "Pendente" }] };
                                 saveDataToFirestore();
                             }
                             renderUI();
